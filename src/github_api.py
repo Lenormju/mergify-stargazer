@@ -58,6 +58,7 @@ def reraise_key_error_exception_as_unexpected_github_response(func: Callable[Par
 
 DEFAULT_TIMEOUT_SECONDS = 10
 MAXIMUM_GET_STARGAZERS_PER_PAGE = 100
+MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE = 100
 
 
 @reraise_key_error_exception_as_unexpected_github_response
@@ -93,6 +94,27 @@ def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
         stargazers = tuple(stargazer["login"] for stargazer in response_data)
         # FIXME: pagination !!!!
         return stargazers
+    else:
+        raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
+
+
+@reraise_key_error_exception_as_unexpected_github_response
+def get_stargazer_repos(user_name: str) -> Sequence[str]:
+    """Get the repositories that the user have starred."""
+    response = _github_api_get(
+        # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-repositories-starred-by-a-user
+        url=f"https://api.github.com/users/{user_name}/starred",
+        params={
+            "per_page": MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE,
+            # "sort" ignored
+        },
+        custom_accept_param=None,  # no need for the starring timestamp
+    )
+    if response.status_code == requests.codes.ok:
+        response_data = response.json()
+        stargazer_repos = tuple(repo["full_name"] for repo in response_data)
+        # FIXME: pagination !!!!
+        return stargazer_repos
     else:
         raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
 
