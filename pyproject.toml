@@ -11,5 +11,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "setuptools != 78.0",  # for better PyCharm venv support, and avoiding 78.0.x
+    "mypy ~= 1.15",  # 1.15.x was the latest at the time
+    "ruff ~= 0.11",  # 0.11.x was the latest at the time
+    "setuptools != 78.0", # for better PyCharm venv support, and avoiding 78.0.x
 ]
