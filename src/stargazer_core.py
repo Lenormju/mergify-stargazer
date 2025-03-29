@@ -1,35 +1,18 @@
-from contextlib import asynccontextmanager
 from typing import Sequence
 from dataclasses import dataclass
 from collections import defaultdict
 import logging
 
-from fastapi import FastAPI
-
 from github_api import get_rate_limit_core_remaining, get_stargazers_of_repo, get_stargazer_repos
 
 
-logger = logging.getLogger("stargazer.service")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    setup_custom_logging()
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+logger = logging.getLogger("stargazer.core")
 
 
 @dataclass  # TODO: pydantic
 class NeighbourRepository:
     repo: str
     stargazers: Sequence[str]
-
-
-@app.get("/repos/{user}/{repo}/starneighbours")
-def get_star_neighbours(user: str, repo: str) -> Sequence[NeighbourRepository]:
-    return compute_star_neighbours(user_name=user, repo_name=repo)
 
 
 def compute_star_neighbours(user_name: str, repo_name: str) -> Sequence[NeighbourRepository]:
@@ -64,18 +47,6 @@ def compute_star_neighbours(user_name: str, repo_name: str) -> Sequence[Neighbou
         )
     )
     return sorted_star_neighbours
-
-
-def setup_custom_logging() -> None:
-    # cf https://stackoverflow.com/a/77007723/11384184
-    stargazer_logger = logging.getLogger("stargazer")
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    handler.setFormatter(formatter)
-    stargazer_logger.addHandler(handler)
-    stargazer_logger.setLevel(logging.DEBUG)
-    logger.debug("custom logging enabled")
-    # TODO: integrate instead with uvicorn loggers ? how to forward ?
 
 
 if __name__ == "__main__":

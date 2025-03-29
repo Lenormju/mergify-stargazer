@@ -16,7 +16,7 @@ For now, the application will read the secret from its environment. So use your 
 
 Install the dependencies using [`uv`](https://docs.astral.sh/uv/) : `uv sync --frozen --group dev`.
 
-Run the application : `uv run fastapi run src/stargazer_service.py`.
+Run the application : `uv run fastapi run src/stargazer_api.py`.
 By default, will run on `127.0.0.1:8000`, without auto-reload.
 
 ## Vocabulary
