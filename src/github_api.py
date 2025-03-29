@@ -1,5 +1,6 @@
 import os
-from typing import Sequence
+import functools
+from typing import Sequence, Callable, ParamSpec, TypeVar
 
 import requests
 
@@ -40,10 +41,26 @@ class UnexpectedGithubResponse(GithubApiError):
     pass
 
 
+Param = ParamSpec("Param")
+RetType = TypeVar("RetType")
+
+
+def reraise_key_error_exception_as_unexpected_github_response(func: Callable[Param, RetType]) -> Callable[[Param], RetType]:
+    @functools.wraps(func)
+    def wrapper(*args: Param, **kwargs: Param) -> RetType:
+        try:
+            return func(*args, **kwargs)
+        except KeyError as e:
+            raise UnexpectedGithubResponse() from e
+
+    return wrapper
+
+
 DEFAULT_TIMEOUT_SECONDS = 10
 MAXIMUM_GET_STARGAZERS_PER_PAGE = 100
 
 
+@reraise_key_error_exception_as_unexpected_github_response
 def get_rate_limit_core_remaining():
     """Get the number of remaining requests that can me made on the API."""
     response = _github_api_get(
@@ -58,6 +75,7 @@ def get_rate_limit_core_remaining():
         return data["resources"]["core"]["remaining"]
 
 
+@reraise_key_error_exception_as_unexpected_github_response
 def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
     """Get the users that have starred this repository."""
     response = _github_api_get(
