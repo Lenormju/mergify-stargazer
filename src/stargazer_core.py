@@ -36,7 +36,7 @@ def compute_star_neighbours(
 
     repo_stargazers = get_stargazers_of_repo(user_name, repo_name)
     for stargazer_name in repo_stargazers:
-        repos_of_stargazer = get_stargazer_repos(stargazer_name)
+        repos_of_stargazer = get_stargazer_repos(stargazer_name)  # TODO: parallel
         for repo_fullname in repos_of_stargazer:
             all_star_neighbours[repo_fullname].append(stargazer_name)
 

@@ -47,3 +47,5 @@ By default, will run on `127.0.0.1:8000`, without auto-reload.
 * nicer logging
 * strong/integrated auth
 * avoid f-strings in logging messages ?
+* use pydantic BaseModel for validation
+* use PyGitHub lib
