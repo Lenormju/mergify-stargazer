@@ -74,6 +74,7 @@ if response.status_code == requests.codes.unprocessable:
 elif response.status_code == requests.codes.ok:
     response_data = response.json()
     stargazers = tuple(stargazer["login"] for stargazer in response_data)
+    # FIXME: pagination !!!!
     print(stargazers)
 else:
     print(response.text)  # FIXME debug
