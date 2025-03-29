@@ -19,20 +19,24 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-security = HTTPBasic()  # cf https://fastapi.tiangolo.com/advanced/security/http-basic-auth/#http-basic-auth
+security = (
+    HTTPBasic()
+)  # cf https://fastapi.tiangolo.com/advanced/security/http-basic-auth/#http-basic-auth
 
 
 @app.get("/repos/{user}/{repo}/starneighbours")
 def get_star_neighbours(
-        user: str,
-        repo: str,
-        credentials: Annotated[HTTPBasicCredentials, Depends(security)],
-        ) -> Sequence[NeighbourRepository]:
+    user: str,
+    repo: str,
+    credentials: Annotated[HTTPBasicCredentials, Depends(security)],
+) -> Sequence[NeighbourRepository]:
     _raise_if_not_properly_authenticated(credentials)
     return compute_star_neighbours(user_name=user, repo_name=repo)
 
 
-def _raise_if_not_properly_authenticated(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> None:
+def _raise_if_not_properly_authenticated(
+    credentials: Annotated[HTTPBasicCredentials, Depends(security)],
+) -> None:
     # this function has been copied from :
     # https://fastapi.tiangolo.com/advanced/security/http-basic-auth/#fix-it-with-secretscompare_digest
     # TODO: add a better auth system

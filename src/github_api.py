@@ -27,7 +27,9 @@ import requests
 # - "per_page" query parameter
 
 
-token = os.getenv("GITHUB_API_ACCESS_TOKEN").strip()  # FIXME: store the secret another way
+token = os.getenv(
+    "GITHUB_API_ACCESS_TOKEN"
+).strip()  # FIXME: store the secret another way
 
 
 class GithubApiError(Exception):
@@ -46,7 +48,9 @@ Param = ParamSpec("Param")
 RetType = TypeVar("RetType")
 
 
-def reraise_key_error_exception_as_unexpected_github_response(func: Callable[Param, RetType]) -> Callable[[Param], RetType]:
+def reraise_key_error_exception_as_unexpected_github_response(
+    func: Callable[Param, RetType],
+) -> Callable[[Param], RetType]:
     @functools.wraps(func)
     def wrapper(*args: Param, **kwargs: Param) -> RetType:
         try:
@@ -130,11 +134,12 @@ def get_stargazer_repos(user_name: str) -> Sequence[str]:
 _SESSION = requests.Session()  # to be reused between calls
 
 
-def _github_api_get(*,
-                    url: str,
-                    params: dict[str, str | int] | None = None,
-                    custom_accept_param: str | None = None,
-                    ) -> requests.Response:
+def _github_api_get(
+    *,
+    url: str,
+    params: dict[str, str | int] | None = None,
+    custom_accept_param: str | None = None,
+) -> requests.Response:
     """Make a GET request on the GitHub API using good defaults."""
     logger.debug(f"get github {url=!r} with {params=!r}")
     response = _SESSION.get(
@@ -143,18 +148,25 @@ def _github_api_get(*,
         allow_redirects=True,
         timeout=DEFAULT_TIMEOUT_SECONDS,
         headers={
-            "Accept": ("application/vnd.github+json" if custom_accept_param is None
-                       else custom_accept_param),
+            "Accept": (
+                "application/vnd.github+json"
+                if custom_accept_param is None
+                else custom_accept_param
+            ),
             "Authorization": f"Bearer {token}",
             "User-Agent": "Lenormju/mergify-stargazer",
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
     if retry_after_value := response.headers.get("retry-after"):  # FIXME: untested !
-        raise RateLimitError(f'received a "retry-after" by GitHub: {retry_after_value!r}')
+        raise RateLimitError(
+            f'received a "retry-after" by GitHub: {retry_after_value!r}'
+        )
     elif response.headers.get("X-RateLimit-Remaining") == "0":
         reset_value = response.headers.get("X-RateLimit-Reset")
         # reset_value is an UTC timestamp of when the rate will be replenished
-        raise RateLimitError(f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}')
+        raise RateLimitError(
+            f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}'
+        )
     else:
         return response
