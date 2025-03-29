@@ -3,7 +3,6 @@ from typing import Sequence
 
 import requests
 
-
 # see https://docs.github.com/en/rest/using-the-rest-api/getting-started-with-the-rest-api?apiVersion=2022-11-28
 # rate limit, cf https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=2022-11-28
 # - primary :
@@ -29,6 +28,18 @@ import requests
 token = os.getenv("GITHUB_API_ACCESS_TOKEN").strip()  # FIXME: store the secret another way
 
 
+class GithubApiError(Exception):
+    pass
+
+
+class RateLimitError(GithubApiError):
+    pass
+
+
+class UnexpectedGithubResponse(GithubApiError):
+    pass
+
+
 DEFAULT_TIMEOUT_SECONDS = 10
 MAXIMUM_GET_STARGAZERS_PER_PAGE = 100
 
@@ -40,7 +51,7 @@ def get_rate_limit_core_remaining():
         url=f"https://api.github.com/rate_limit",
     )
     if response.status_code != requests.codes.ok:
-        raise ValueError(f"unexpected {response.status_code=!r}")  # FIXME better error
+        raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
     else:
         data = response.json()
         # print(data)  # FIXME debug
@@ -58,16 +69,14 @@ def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
         custom_accept_param=None,  # no need for the starring timestamp
     )
     if response.status_code == requests.codes.unprocessable:
-        raise ValueError(f"received {response.status_code=!r}")  # FIXME better error
+        raise RateLimitError(f"received {response.status_code=!r}")
     elif response.status_code == requests.codes.ok:
         response_data = response.json()
         stargazers = tuple(stargazer["login"] for stargazer in response_data)
         # FIXME: pagination !!!!
         return stargazers
     else:
-        print(response.text)  # FIXME debug
-        raise ValueError(f"unexpected {response.status_code=!r}")  # FIXME better error
-
+        raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
 
 
 def _github_api_get(*,
@@ -89,10 +98,11 @@ def _github_api_get(*,
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    if retry_after_value := response.headers.get("retry-after"):
-        raise ValueError(f'received a "retry-after" by GitHub: {retry_after_value!r}')  # FIXME better error
+    if retry_after_value := response.headers.get("retry-after"):  # FIXME: untested !
+        raise RateLimitError(f'received a "retry-after" by GitHub: {retry_after_value!r}')
     elif response.headers.get("X-RateLimit-Remaining") == "0":
         reset_value = response.headers.get("X-RateLimit-Reset")
-        raise ValueError(f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}')  # FIXME better error
+        # reset_value is an UTC timestamp of when the rate will be replenished
+        raise RateLimitError(f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}')
     else:
         return response
