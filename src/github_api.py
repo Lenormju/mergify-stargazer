@@ -1,7 +1,12 @@
-import os
-import logging
+"""Interface to fetch the GitHub API for Stargazer-specific purposes."""
+
+from __future__ import annotations
+
 import functools
-from typing import Sequence, Callable, ParamSpec, TypeVar
+import logging
+import os
+from collections.abc import Sequence
+from typing import Callable, ParamSpec, TypeVar
 
 import requests
 
@@ -28,19 +33,19 @@ import requests
 
 
 token = os.getenv(
-    "GITHUB_API_ACCESS_TOKEN"
+    "GITHUB_API_ACCESS_TOKEN",
 ).strip()  # FIXME: store the secret another way
 
 
-class GithubApiError(Exception):
+class GithubApiError(Exception):  # noqa: D101
     pass
 
 
-class RateLimitError(GithubApiError):
+class RateLimitError(GithubApiError):  # noqa: D101
     pass
 
 
-class UnexpectedGithubResponse(GithubApiError):
+class UnexpectedGithubResponseError(GithubApiError):  # noqa: D101
     pass
 
 
@@ -48,7 +53,7 @@ Param = ParamSpec("Param")
 RetType = TypeVar("RetType")
 
 
-def reraise_key_error_exception_as_unexpected_github_response(
+def _reraise_key_error_exception_as_unexpected_github_response(
     func: Callable[Param, RetType],
 ) -> Callable[[Param], RetType]:
     @functools.wraps(func)
@@ -56,7 +61,7 @@ def reraise_key_error_exception_as_unexpected_github_response(
         try:
             return func(*args, **kwargs)
         except KeyError as e:
-            raise UnexpectedGithubResponse() from e
+            raise UnexpectedGithubResponseError from e
 
     return wrapper
 
@@ -69,22 +74,20 @@ MAXIMUM_GET_STARGAZERS_PER_PAGE = 100
 MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE = 100
 
 
-@reraise_key_error_exception_as_unexpected_github_response
-def get_rate_limit_core_remaining():
+@_reraise_key_error_exception_as_unexpected_github_response
+def get_rate_limit_core_remaining() -> int:
     """Get the number of remaining requests that can me made on the API."""
     response = _github_api_get(
         # https://docs.github.com/en/rest/rate-limit/rate-limit
-        url=f"https://api.github.com/rate_limit",
+        url="https://api.github.com/rate_limit",
     )
     if response.status_code != requests.codes.ok:
-        raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
-    else:
-        data = response.json()
-        # print(data)  # FIXME debug
-        return data["resources"]["core"]["remaining"]
+        raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
+    data = response.json()
+    return data["resources"]["core"]["remaining"]
 
 
-@reraise_key_error_exception_as_unexpected_github_response
+@_reraise_key_error_exception_as_unexpected_github_response
 def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
     """Get the users that have starred this repository."""
     response = _github_api_get(
@@ -97,18 +100,17 @@ def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
     )
     if response.status_code == requests.codes.unprocessable:
         raise RateLimitError(f"received {response.status_code=!r}")
-    elif response.status_code == requests.codes.ok:
+    if response.status_code == requests.codes.ok:
         response_data = response.json()
         stargazers = tuple(stargazer["login"] for stargazer in response_data)
         logger.debug(f"found {len(stargazers)=!r} for repo {owner_name}/{repo_name}")
         logger.debug(f"{stargazers=!r}")
         # FIXME: pagination !!!!
         return stargazers
-    else:
-        raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
+    raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
 
 
-@reraise_key_error_exception_as_unexpected_github_response
+@_reraise_key_error_exception_as_unexpected_github_response
 def get_stargazer_repos(user_name: str) -> Sequence[str]:
     """Get the repositories that the user have starred."""
     response = _github_api_get(
@@ -127,8 +129,7 @@ def get_stargazer_repos(user_name: str) -> Sequence[str]:
         logger.debug(f"{stargazer_repos=!r}")
         # FIXME: pagination !!!!
         return stargazer_repos
-    else:
-        raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
+    raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
 
 
 _SESSION = requests.Session()  # to be reused between calls
@@ -160,13 +161,12 @@ def _github_api_get(
     )
     if retry_after_value := response.headers.get("retry-after"):  # FIXME: untested !
         raise RateLimitError(
-            f'received a "retry-after" by GitHub: {retry_after_value!r}'
+            f'received a "retry-after" by GitHub: {retry_after_value!r}',
         )
-    elif response.headers.get("X-RateLimit-Remaining") == "0":
+    if response.headers.get("X-RateLimit-Remaining") == "0":
         reset_value = response.headers.get("X-RateLimit-Reset")
         # reset_value is an UTC timestamp of when the rate will be replenished
         raise RateLimitError(
-            f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}'
+            f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
         )
-    else:
-        return response
+    return response

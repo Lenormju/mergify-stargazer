@@ -1,24 +1,26 @@
-from contextlib import asynccontextmanager
-import logging
-from typing import Sequence, Annotated
-import secrets
+"""The web API provided for Stargazer. It is based on vanilla FastAPI."""
 
-from fastapi import FastAPI, HTTPException, status, Depends
+import logging
+import secrets
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from stargazer_core import NeighbourRepository, compute_star_neighbours
-
 
 logger = logging.getLogger("stargazer.service")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    setup_custom_logging()
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
+    _setup_custom_logging()
     yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=_lifespan)
 security = (
     HTTPBasic()
 )  # cf https://fastapi.tiangolo.com/advanced/security/http-basic-auth/#http-basic-auth
@@ -30,6 +32,7 @@ def get_star_neighbours(
     repo: str,
     credentials: Annotated[HTTPBasicCredentials, Depends(security)],
 ) -> Sequence[NeighbourRepository]:
+    """If authenticated, compute the repos that are neighbours of the one provided."""
     _raise_if_not_properly_authenticated(credentials)
     return compute_star_neighbours(user_name=user, repo_name=repo)
 
@@ -43,12 +46,14 @@ def _raise_if_not_properly_authenticated(
     current_username_bytes = credentials.username.encode("utf8")
     correct_username_bytes = b"julien"
     is_correct_username = secrets.compare_digest(
-        current_username_bytes, correct_username_bytes
+        current_username_bytes,
+        correct_username_bytes,
     )
     current_password_bytes = credentials.password.encode("utf8")
     correct_password_bytes = b"xVE8WyVsOfpn5cEQfgqB"  # randomly generated
     is_correct_password = secrets.compare_digest(
-        current_password_bytes, correct_password_bytes
+        current_password_bytes,
+        correct_password_bytes,
     )
     if not (is_correct_username and is_correct_password):
         raise HTTPException(
@@ -58,7 +63,7 @@ def _raise_if_not_properly_authenticated(
         )
 
 
-def setup_custom_logging() -> None:
+def _setup_custom_logging() -> None:
     # cf https://stackoverflow.com/a/77007723/11384184
     stargazer_logger = logging.getLogger("stargazer")
     handler = logging.StreamHandler()

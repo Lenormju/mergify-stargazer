@@ -15,3 +15,16 @@ dev = [
     "ruff ~= 0.11",  # 0.11.x was the latest at the time
     "setuptools != 78.0", # for better PyCharm venv support, and avoiding 78.0.x
 ]
+
+[tool.ruff.lint]
+select = ["ALL"] # enable all rules by default
+ignore = [
+    "D203",    # incorrect-blank-line-before-class --> incompatible with D211
+    "D212",    # multi-line-summary-first-line --> incompatible with D213
+    "COM812",  # missing-trailing-comma --> conflicts with Ruff formatter
+    "TD002", "TD003", # no issue link/author for TODO ==> this is just a demo project, no issue tracking
+    "EM102", "TRY003",  # f-string in exception messages, or long messages ==> no need yet for real custom exceptions
+    "TD001",  # use TODO instead of FIXME ==> FIXMEs are valid TODO tags in my opinion
+    "G004",  # avoid f-string in logging messages ==> for perf reasons, to fix later
+    "TC003",  # typechking import into a donctionnal block ==> there is no need for this elvel of optimization
+]
