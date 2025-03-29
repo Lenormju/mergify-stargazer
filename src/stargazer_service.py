@@ -1,5 +1,8 @@
 import os
 
+import requests
+
+
 # see https://docs.github.com/en/rest/using-the-rest-api/getting-started-with-the-rest-api?apiVersion=2022-11-28
 # rate limit, cf https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=2022-11-28
 # - primary :
@@ -22,4 +25,23 @@ import os
 # - "per_page" query parameter
 
 
-token = os.getenv("GITHUB_API_ACCESS_TOKEN")  # FIXME: store the secret another way
+token = os.getenv("GITHUB_API_ACCESS_TOKEN").strip()  # FIXME: store the secret another way
+
+
+DEFAULT_TIMEOUT_SECONDS = 10
+
+
+response = requests.get(
+    # https://docs.github.com/en/rest/rate-limit/rate-limit
+    url=f"https://api.github.com/rate_limit",
+    allow_redirects=True,
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+    headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "Lenormju/mergify-stargazer",
+        "X-GitHub-Api-Version": "2022-11-28",
+    },
+)
+response.raise_for_status()
+print(response.json())
