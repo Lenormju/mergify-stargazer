@@ -127,6 +127,9 @@ def get_stargazer_repos(user_name: str) -> Sequence[str]:
         raise UnexpectedGithubResponse(f"unexpected {response.status_code=!r}")
 
 
+_SESSION = requests.Session()  # to be reused between calls
+
+
 def _github_api_get(*,
                     url: str,
                     params: dict[str, str | int] | None = None,
@@ -134,7 +137,7 @@ def _github_api_get(*,
                     ) -> requests.Response:
     """Make a GET request on the GitHub API using good defaults."""
     logger.debug(f"get github {url=!r} with {params=!r}")
-    response = requests.get(
+    response = _SESSION.get(
         url=url,
         params=params,
         allow_redirects=True,
