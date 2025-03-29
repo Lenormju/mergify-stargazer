@@ -45,3 +45,33 @@ response = requests.get(
 )
 response.raise_for_status()
 print(response.json())
+
+
+owner_name = "Lenormju"
+repo_name = "talk-et-cfp"
+
+
+response = requests.get(
+    # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-stargazers
+    url=f"https://api.github.com/repos/{owner_name}/{repo_name}/stargazers",
+    params={
+        "per_page": 100,  # TODO: var
+    },
+    allow_redirects=True,
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+    headers={
+        "Accept": "application/vnd.github+json",  # no need for the starring timestamp
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "Lenormju/mergify-stargazer",
+        "X-GitHub-Api-Version": "2022-11-28",
+    },
+)
+if response.status_code == requests.codes.unprocessable:
+    raise ValueError(f"received {response.status_code=!r}")  # FIXME: better error
+elif response.status_code == requests.codes.ok:
+    response_data = response.json()
+    stargazers = tuple(stargazer["login"] for stargazer in response_data)
+    print(stargazers)
+else:
+    print(response.text)  # FIXME debug
+    raise ValueError(f"unexpected {response.status_code=!r}")  # FIXME: better error
