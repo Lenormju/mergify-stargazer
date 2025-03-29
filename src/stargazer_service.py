@@ -23,13 +23,26 @@ def get_star_neighbours(user_name: str, repo_name: str) -> Sequence[NeighbourRep
     initial_repo_fullname = f"{user_name}/{repo_name}"
     del all_star_neighbours[initial_repo_fullname]  # we already know they share this one
 
-    return tuple(
-        NeighbourRepository(
-            repo=repo_fullname,
-            stargazers=repo_stargazers,
+    sorted_star_neighbours = tuple(
+        sorted(
+            (
+                NeighbourRepository(
+                    repo=repo_fullname,
+                    stargazers=repo_stargazers,
+                )
+                for repo_fullname, repo_stargazers in all_star_neighbours.items()
+            ),
+            # sorting by descending number of stargazers, then by ascending repo fullnames
+            # so we have to construct a key that is smart
+            key=lambda neighbour:
+            (
+                -len(neighbour.stargazers),  # from most negative to least negative, so from bigger to smaller
+                neighbour.repo,
+            ),
+            reverse=False,  # revert=False means "ascending order" of the key
         )
-        for repo_fullname, repo_stargazers in all_star_neighbours.items()
     )
+    return sorted_star_neighbours
 
 
 if __name__ == "__main__":
