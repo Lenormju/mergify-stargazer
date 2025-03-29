@@ -15,6 +15,9 @@ def get_star_neighbours(user_name: str, repo_name: str) -> Sequence[NeighbourRep
 
 
 if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+
     from pprint import pprint as pp
 
     print(get_rate_limit_core_remaining())

@@ -1,4 +1,5 @@
 import os
+import logging
 import functools
 from typing import Sequence, Callable, ParamSpec, TypeVar
 
@@ -56,6 +57,9 @@ def reraise_key_error_exception_as_unexpected_github_response(func: Callable[Par
     return wrapper
 
 
+logger = logging.getLogger("stargazer.github_api")
+
+
 DEFAULT_TIMEOUT_SECONDS = 10
 MAXIMUM_GET_STARGAZERS_PER_PAGE = 100
 MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE = 100
@@ -92,6 +96,8 @@ def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
     elif response.status_code == requests.codes.ok:
         response_data = response.json()
         stargazers = tuple(stargazer["login"] for stargazer in response_data)
+        logger.debug(f"found {len(stargazers)=!r} for repo {owner_name}/{repo_name}")
+        logger.debug(f"{stargazers=!r}")
         # FIXME: pagination !!!!
         return stargazers
     else:
@@ -113,6 +119,8 @@ def get_stargazer_repos(user_name: str) -> Sequence[str]:
     if response.status_code == requests.codes.ok:
         response_data = response.json()
         stargazer_repos = tuple(repo["full_name"] for repo in response_data)
+        logger.debug(f"found {len(stargazer_repos)=!r} for user {user_name}")
+        logger.debug(f"{stargazer_repos=!r}")
         # FIXME: pagination !!!!
         return stargazer_repos
     else:
@@ -125,6 +133,7 @@ def _github_api_get(*,
                     custom_accept_param: str | None = None,
                     ) -> requests.Response:
     """Make a GET request on the GitHub API using good defaults."""
+    logger.debug(f"get github {url=!r} with {params=!r}")
     response = requests.get(
         url=url,
         params=params,
