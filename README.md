@@ -16,7 +16,8 @@ For now, the application will read the secret from its environment. So use your 
 
 Install the dependencies using [`uv`](https://docs.astral.sh/uv/) : `uv sync --frozen --group dev`.
 
-Run the application : `uv run src/stargazer_service.py`.
+Run the application : `uv run fastapi run src/stargazer_service.py`.
+By default, will run on `127.0.0.1:8000`, without auto-reload.
 
 ## Vocabulary
 
@@ -36,5 +37,10 @@ Run the application : `uv run src/stargazer_service.py`.
 
 ## Ideas for later
 
-* async requests ?
-* keyring instead of env file ?
+* async requests for concurrent fetching
+* keyring instead of env file
+* uvicorn workers
+* https
+* Docker container
+* CI
+* input sanitization (with FastApi `Query` ?)

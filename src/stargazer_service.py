@@ -1,17 +1,38 @@
+from contextlib import asynccontextmanager
 from typing import Sequence
 from dataclasses import dataclass
 from collections import defaultdict
+import logging
+
+from fastapi import FastAPI
 
 from github_api import get_rate_limit_core_remaining, get_stargazers_of_repo, get_stargazer_repos
 
 
-@dataclass
+logger = logging.getLogger("stargazer.service")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup_custom_logging()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@dataclass  # TODO: pydantic
 class NeighbourRepository:
     repo: str
     stargazers: Sequence[str]
 
 
-def get_star_neighbours(user_name: str, repo_name: str) -> Sequence[NeighbourRepository]:
+@app.get("/repos/{user}/{repo}/starneighbours")
+def get_star_neighbours(user: str, repo: str) -> Sequence[NeighbourRepository]:
+    return compute_star_neighbours(user_name=user, repo_name=repo)
+
+
+def compute_star_neighbours(user_name: str, repo_name: str) -> Sequence[NeighbourRepository]:
     all_star_neighbours = defaultdict(list)
 
     repo_stargazers = get_stargazers_of_repo(user_name, repo_name)
@@ -45,10 +66,22 @@ def get_star_neighbours(user_name: str, repo_name: str) -> Sequence[NeighbourRep
     return sorted_star_neighbours
 
 
+def setup_custom_logging() -> None:
+    # cf https://stackoverflow.com/a/77007723/11384184
+    stargazer_logger = logging.getLogger("stargazer")
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    handler.setFormatter(formatter)
+    stargazer_logger.addHandler(handler)
+    stargazer_logger.setLevel(logging.DEBUG)
+    logger.debug("custom logging enabled")
+    # TODO: integrate instead with uvicorn loggers ? how to forward ?
+
+
 if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.DEBUG)
     from pprint import pprint as pp
     print(get_rate_limit_core_remaining())
-    pp(get_star_neighbours("msqd", "harp"))
+    pp(compute_star_neighbours("Lenormju", "talk-et-cfp"))
     print(get_rate_limit_core_remaining())

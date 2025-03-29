@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "requests ~= 2.32",  # 2.32.x was the latest at the time
+    "fastapi[standard] ~= 0.115",  # 0.115.x was the latest at the time
 ]
 
 [dependency-groups]
