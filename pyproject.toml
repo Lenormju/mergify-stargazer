@@ -1,0 +1,12 @@
+[project]
+name = "mergify-stargazer"
+version = "0.1.0"
+description = "Find GitHub repositories that are star-close"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "setuptools != 78.0",  # for better PyCharm venv support, and avoiding 78.0.x
+]
