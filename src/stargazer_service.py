@@ -47,15 +47,18 @@ response.raise_for_status()
 print(response.json())
 
 
-owner_name = "Lenormju"
-repo_name = "talk-et-cfp"
+owner_name = "msqd"
+repo_name = "harp"
+
+
+DEFAULT_TIMEOUT_SECONDS = 10
 
 
 response = requests.get(
     # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-stargazers
     url=f"https://api.github.com/repos/{owner_name}/{repo_name}/stargazers",
     params={
-        "per_page": 100,  # TODO: var
+        "per_page": 100,
     },
     allow_redirects=True,
     timeout=DEFAULT_TIMEOUT_SECONDS,
