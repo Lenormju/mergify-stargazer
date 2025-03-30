@@ -57,3 +57,4 @@ To test the code : `uv run pytest`
 * avoid f-strings in logging messages ?
 * use pydantic BaseModel for validation
 * use PyGitHub lib
+* better authentication system
