@@ -19,6 +19,14 @@ Install the dependencies using [`uv`](https://docs.astral.sh/uv/) : `uv sync --f
 Run the application : `uv run fastapi run src/stargazer_api.py`.
 By default, will run on `127.0.0.1:8000`, without auto-reload.
 
+### Dev workflow
+
+To format the code : `uv run ruff format src`
+
+To lint the code : `uv run ruff check src`
+
+To test the code : `uv run pytest`
+
 ## Vocabulary
 
 * Users that star repositories are called stargazers.

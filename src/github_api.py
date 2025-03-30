@@ -170,3 +170,11 @@ def _github_api_get(
             f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
         )
     return response
+
+
+def _extract_next_from_header_link_value(link_value: str) -> str | None:
+    links = link_value.split(",")
+    for link in links:
+        link_url, link_rel = link.split(";")
+        if link_rel.strip() == 'rel="next"':
+            return link_url.strip("<>")
