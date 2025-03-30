@@ -5,7 +5,7 @@ Find GitHub repositories that are star-close.
 ## Dev setup
 
 [Create a fine-grained personal access token](https://github.com/settings/personal-access-tokens), without any account permissions.
-Store the string starting with `github_pat_` in your password manager, you can not retrieve it after that.
+Store the string (starting with `github_pat_`) in your password manager, you can not retrieve it after that.
 
 GitHub recommends using keyvaults that the application gets its token (secret) from.
 For now, the application will read the secret from its environment. So use your preferred way to add it :
