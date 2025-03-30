@@ -6,7 +6,8 @@ import functools
 import logging
 import os
 from collections.abc import Sequence
-from typing import Callable, ParamSpec, TypeVar
+from dataclasses import dataclass
+from typing import Callable, ParamSpec, TypeVar, TypeAlias
 
 import requests
 
@@ -83,8 +84,7 @@ def get_rate_limit_core_remaining() -> int:
     )
     if response.status_code != requests.codes.ok:
         raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
-    data = response.json()
-    return data["resources"]["core"]["remaining"]
+    return response.json_data["resources"]["core"]["remaining"]
 
 
 @_reraise_key_error_exception_as_unexpected_github_response
@@ -101,8 +101,7 @@ def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
     if response.status_code == requests.codes.unprocessable:
         raise RateLimitError(f"received {response.status_code=!r}")
     if response.status_code == requests.codes.ok:
-        response_data = response.json()
-        stargazers = tuple(stargazer["login"] for stargazer in response_data)
+        stargazers = tuple(stargazer["login"] for stargazer in response.json_data)
         logger.debug(f"found {len(stargazers)=!r} for repo {owner_name}/{repo_name}")
         logger.debug(f"{stargazers=!r}")
         # FIXME: pagination !!!!
@@ -123,8 +122,7 @@ def get_stargazer_repos(user_name: str) -> Sequence[str]:
         custom_accept_param=None,  # no need for the starring timestamp
     )
     if response.status_code == requests.codes.ok:
-        response_data = response.json()
-        stargazer_repos = tuple(repo["full_name"] for repo in response_data)
+        stargazer_repos = tuple(repo["full_name"] for repo in response.json_data)
         logger.debug(f"found {len(stargazer_repos)=!r} for user {user_name}")
         logger.debug(f"{stargazer_repos=!r}")
         # FIXME: pagination !!!!
@@ -135,12 +133,21 @@ def get_stargazer_repos(user_name: str) -> Sequence[str]:
 _SESSION = requests.Session()  # to be reused between calls
 
 
+JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None  # https://stackoverflow.com/a/77361801/11384184
+
+
+@dataclass
+class _GitHubApiResponse:
+    status_code: int
+    json_data: JSON
+
+
 def _github_api_get(
     *,
     url: str,
     params: dict[str, str | int] | None = None,
     custom_accept_param: str | None = None,
-) -> requests.Response:
+) -> _GitHubApiResponse:
     """Make a GET request on the GitHub API using good defaults."""
     logger.debug(f"get github {url=!r} with {params=!r}")
     response = _SESSION.get(
@@ -169,7 +176,10 @@ def _github_api_get(
         raise RateLimitError(
             f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
         )
-    return response
+    return _GitHubApiResponse(
+        status_code=response.status_code,
+        json_data=response.json(),
+    )
 
 
 def _extract_next_from_header_link_value(link_value: str) -> str | None:
