@@ -91,43 +91,43 @@ def get_rate_limit_core_remaining() -> int:
 def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
     """Get the users that have starred this repository."""
     response = _github_api_get(
-        # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-stargazers
-        url=f"https://api.github.com/repos/{owner_name}/{repo_name}/stargazers",
-        params={
-            "per_page": MAXIMUM_GET_STARGAZERS_PER_PAGE,
-        },
-        custom_accept_param=None,  # no need for the starring timestamp
-    )
-    if response.status_code == requests.codes.unprocessable:
-        raise RateLimitError(f"received {response.status_code=!r}")
-    if response.status_code == requests.codes.ok:
-        stargazers = tuple(stargazer["login"] for stargazer in response.json_data)
-        logger.debug(f"found {len(stargazers)=!r} for repo {owner_name}/{repo_name}")
-        logger.debug(f"{stargazers=!r}")
-        # FIXME: pagination !!!!
-        return stargazers
-    raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
+            # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-stargazers
+            url=f"https://api.github.com/repos/{owner_name}/{repo_name}/stargazers",
+            params={
+                "per_page": MAXIMUM_GET_STARGAZERS_PER_PAGE,
+            },
+            custom_accept_param=None,  # no need for the starring timestamp
+            fetch_all_across_pagination=True,
+        )
+        if response.status_code == requests.codes.unprocessable:
+            raise RateLimitError(f"received {response.status_code=!r}")
+        if response.status_code == requests.codes.ok:
+            stargazers = tuple(stargazer["login"] for stargazer in response.json_data)
+            logger.debug(f"found {len(stargazers)=!r} for repo {owner_name}/{repo_name}")
+            logger.debug(f"{stargazers=!r}")
+            return stargazers
+        raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
 
 
 @_reraise_key_error_exception_as_unexpected_github_response
 def get_stargazer_repos(user_name: str) -> Sequence[str]:
     """Get the repositories that the user have starred."""
     response = _github_api_get(
-        # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-repositories-starred-by-a-user
-        url=f"https://api.github.com/users/{user_name}/starred",
-        params={
-            "per_page": MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE,
-            # "sort" ignored
-        },
-        custom_accept_param=None,  # no need for the starring timestamp
-    )
-    if response.status_code == requests.codes.ok:
-        stargazer_repos = tuple(repo["full_name"] for repo in response.json_data)
-        logger.debug(f"found {len(stargazer_repos)=!r} for user {user_name}")
-        logger.debug(f"{stargazer_repos=!r}")
-        # FIXME: pagination !!!!
-        return stargazer_repos
-    raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
+            # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-repositories-starred-by-a-user
+            url=f"https://api.github.com/users/{user_name}/starred",
+            params={
+                "per_page": MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE,
+                # "sort" ignored
+            },
+            custom_accept_param=None,  # no need for the starring timestamp
+            fetch_all_across_pagination=True,
+        )
+        if response.status_code == requests.codes.ok:
+            stargazer_repos = tuple(repo["full_name"] for repo in response.json_data)
+            logger.debug(f"found {len(stargazer_repos)=!r} for user {user_name}")
+            logger.debug(f"{stargazer_repos=!r}")
+            return stargazer_repos
+        raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
 
 
 _SESSION = requests.Session()  # to be reused between calls
@@ -147,6 +147,7 @@ def _github_api_get(
     url: str,
     params: dict[str, str | int] | None = None,
     custom_accept_param: str | None = None,
+    fetch_all_across_pagination = False,  # TODO: find a better name for this param
 ) -> _GitHubApiResponse:
     """Make a GET request on the GitHub API using good defaults."""
     logger.debug(f"get github {url=!r} with {params=!r}")
@@ -175,6 +176,22 @@ def _github_api_get(
         # reset_value is an UTC timestamp of when the rate will be replenished
         raise RateLimitError(
             f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
+        )
+    logger.debug(f"{response.headers=!r}")
+    if fetch_all_across_pagination and \
+            (link_value := response.headers.get("Link")) and \
+            (next_url := _extract_next_from_header_link_value(link_value)):
+        current_values = response.json()
+        next_response = _github_api_get(  # recursive call /!\
+            url=next_url,
+            params=params,
+            custom_accept_param=custom_accept_param,
+            fetch_all_across_pagination=fetch_all_across_pagination,
+        )
+        current_values.extend(next_response.json_data)  # assuming it's a list
+        return _GitHubApiResponse(
+            status_code=next_response.status_code,
+            json_data=current_values,
         )
     return _GitHubApiResponse(
         status_code=response.status_code,
