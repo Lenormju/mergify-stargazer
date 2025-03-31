@@ -204,4 +204,4 @@ def _extract_next_from_header_link_value(link_value: str) -> str | None:
     for link in links:
         link_url, link_rel = link.split(";")
         if link_rel.strip() == 'rel="next"':
-            return link_url.strip("<>")
+            return link_url.strip("<> ")  # remove extra spaces and angle brackets
