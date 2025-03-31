@@ -30,6 +30,10 @@ security = (
 STARGAZER_CORE: StargazerCore | None = None
 
 
+AUTHORIZED_LOGIN = "julien"
+AUTHORIZED_PASSWORD = "xVE8WyVsOfpn5cEQfgqB"  # randomly generated
+
+
 @app.get("/repos/{user}/{repo}/starneighbours")
 def get_star_neighbours(
     user: str,
@@ -48,13 +52,13 @@ def _raise_if_not_properly_authenticated(
     # https://fastapi.tiangolo.com/advanced/security/http-basic-auth/#fix-it-with-secretscompare_digest
     # TODO: add a better auth system
     current_username_bytes = credentials.username.encode("utf8")
-    correct_username_bytes = b"julien"
+    correct_username_bytes = AUTHORIZED_LOGIN.encode("utf8")
     is_correct_username = secrets.compare_digest(
         current_username_bytes,
         correct_username_bytes,
     )
     current_password_bytes = credentials.password.encode("utf8")
-    correct_password_bytes = b"xVE8WyVsOfpn5cEQfgqB"  # randomly generated
+    correct_password_bytes = AUTHORIZED_PASSWORD.encode("utf8")
     is_correct_password = secrets.compare_digest(
         current_password_bytes,
         correct_password_bytes,
