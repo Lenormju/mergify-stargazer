@@ -9,7 +9,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from stargazer_core import NeighbourRepository, compute_star_neighbours
+from stargazer_core import NeighbourRepository, StargazerCore
 
 logger = logging.getLogger("stargazer.service")
 
@@ -17,6 +17,7 @@ logger = logging.getLogger("stargazer.service")
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: ARG001
     _setup_custom_logging()
+    _init_core()
     yield
 
 
@@ -24,6 +25,9 @@ app = FastAPI(lifespan=_lifespan)
 security = (
     HTTPBasic()
 )  # cf https://fastapi.tiangolo.com/advanced/security/http-basic-auth/#http-basic-auth
+
+
+STARGAZER_CORE: StargazerCore | None = None
 
 
 @app.get("/repos/{user}/{repo}/starneighbours")
@@ -34,7 +38,7 @@ def get_star_neighbours(
 ) -> Sequence[NeighbourRepository]:
     """If authenticated, compute the repos that are neighbours of the one provided."""
     _raise_if_not_properly_authenticated(credentials)
-    return compute_star_neighbours(user_name=user, repo_name=repo)
+    return STARGAZER_CORE.compute_star_neighbours(user_name=user, repo_name=repo)
 
 
 def _raise_if_not_properly_authenticated(
@@ -73,3 +77,8 @@ def _setup_custom_logging() -> None:
     stargazer_logger.setLevel(logging.DEBUG)
     logger.debug("custom logging enabled")
     # TODO: integrate instead with uvicorn loggers ? how to forward ?
+
+
+def _init_core() -> None:
+    global STARGAZER_CORE
+    STARGAZER_CORE = StargazerCore()  # will fail if the env var is not defined

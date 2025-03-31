@@ -33,11 +33,6 @@ import requests
 # - "per_page" query parameter
 
 
-token = os.getenv(
-    "GITHUB_API_ACCESS_TOKEN",
-).strip()  # FIXME: store the secret another way
-
-
 class GithubApiError(Exception):  # noqa: D101
     pass
 
@@ -75,22 +70,35 @@ MAXIMUM_GET_STARGAZERS_PER_PAGE = 100
 MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE = 100
 
 
-@_reraise_key_error_exception_as_unexpected_github_response
-def get_rate_limit_core_remaining() -> int:
-    """Get the number of remaining requests that can me made on the API."""
-    response = _github_api_get(
-        # https://docs.github.com/en/rest/rate-limit/rate-limit
-        url="https://api.github.com/rate_limit",
-    )
-    if response.status_code != requests.codes.ok:
-        raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
-    return response.json_data["resources"]["core"]["remaining"]
+JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None  # https://stackoverflow.com/a/77361801/11384184
 
 
-@_reraise_key_error_exception_as_unexpected_github_response
-def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
-    """Get the users that have starred this repository."""
-    response = _github_api_get(
+@dataclass
+class _GitHubApiResponse:
+    status_code: int
+    json_data: JSON
+
+
+class GithubApi:
+    def __init__(self, token: str) -> None:
+        self.__token = token
+        self.__session = requests.Session()  # to be reused between calls
+
+    @_reraise_key_error_exception_as_unexpected_github_response
+    def get_rate_limit_core_remaining(self) -> int:
+        """Get the number of remaining requests that can me made on the API."""
+        response = self._github_api_get(
+            # https://docs.github.com/en/rest/rate-limit/rate-limit
+            url="https://api.github.com/rate_limit",
+        )
+        if response.status_code != requests.codes.ok:
+            raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
+        return response.json_data["resources"]["core"]["remaining"]
+
+    @_reraise_key_error_exception_as_unexpected_github_response
+    def get_stargazers_of_repo(self, owner_name: str, repo_name: str) -> Sequence[str]:
+        """Get the users that have starred this repository."""
+        response = self._github_api_get(
             # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-stargazers
             url=f"https://api.github.com/repos/{owner_name}/{repo_name}/stargazers",
             params={
@@ -105,14 +113,14 @@ def get_stargazers_of_repo(owner_name: str, repo_name: str) -> Sequence[str]:
             stargazers = tuple(stargazer["login"] for stargazer in response.json_data)
             logger.debug(f"found {len(stargazers)=!r} for repo {owner_name}/{repo_name}")
             logger.debug(f"{stargazers=!r}")
+
             return stargazers
         raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
 
-
-@_reraise_key_error_exception_as_unexpected_github_response
-def get_stargazer_repos(user_name: str) -> Sequence[str]:
-    """Get the repositories that the user have starred."""
-    response = _github_api_get(
+    @_reraise_key_error_exception_as_unexpected_github_response
+    def get_stargazer_repos(self, user_name: str) -> Sequence[str]:
+        """Get the repositories that the user have starred."""
+        response = self._github_api_get(
             # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-repositories-starred-by-a-user
             url=f"https://api.github.com/users/{user_name}/starred",
             params={
@@ -126,80 +134,70 @@ def get_stargazer_repos(user_name: str) -> Sequence[str]:
             stargazer_repos = tuple(repo["full_name"] for repo in response.json_data)
             logger.debug(f"found {len(stargazer_repos)=!r} for user {user_name}")
             logger.debug(f"{stargazer_repos=!r}")
+
             return stargazer_repos
         raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
 
-
-_SESSION = requests.Session()  # to be reused between calls
-
-
-JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None  # https://stackoverflow.com/a/77361801/11384184
-
-
-@dataclass
-class _GitHubApiResponse:
-    status_code: int
-    json_data: JSON
-
-
-def _github_api_get(
-    *,
-    url: str,
-    params: dict[str, str | int] | None = None,
-    custom_accept_param: str | None = None,
-    fetch_all_across_pagination = False,  # TODO: find a better name for this param
-) -> _GitHubApiResponse:
-    """Make a GET request on the GitHub API using good defaults."""
-    logger.debug(f"get github {url=!r} with {params=!r}")
-    response = _SESSION.get(
-        url=url,
-        params=params,
-        allow_redirects=True,
-        timeout=DEFAULT_TIMEOUT_SECONDS,
-        headers={
-            "Accept": (
-                "application/vnd.github+json"
-                if custom_accept_param is None
-                else custom_accept_param
-            ),
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "Lenormju/mergify-stargazer",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-    if retry_after_value := response.headers.get("retry-after"):  # FIXME: untested !
-        raise RateLimitError(
-            f'received a "retry-after" by GitHub: {retry_after_value!r}',
-        )
-    if response.headers.get("X-RateLimit-Remaining") == "0":
-        reset_value = response.headers.get("X-RateLimit-Reset")
-        # reset_value is an UTC timestamp of when the rate will be replenished
-        raise RateLimitError(
-            f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
-        )
-    logger.debug(f"{response.headers=!r}")
-    if fetch_all_across_pagination and \
-            (link_value := response.headers.get("Link")) and \
-            (next_url := _extract_next_from_header_link_value(link_value)):
-        current_values = response.json()
-        next_response = _github_api_get(  # recursive call /!\
-            url=next_url,
+    def _github_api_get(
+        self,
+        *,
+        url: str,
+        params: dict[str, str | int] | None = None,
+        custom_accept_param: str | None = None,
+        fetch_all_across_pagination = False,  # TODO: find a better name for this param
+    ) -> _GitHubApiResponse:
+        """Make a GET request on the GitHub API using good defaults."""
+        logger.debug(f"get github {url=!r} with {params=!r}")
+        response = self.__session.get(
+            url=url,
             params=params,
-            custom_accept_param=custom_accept_param,
-            fetch_all_across_pagination=fetch_all_across_pagination,
+            allow_redirects=True,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+            headers={
+                "Accept": (
+                    "application/vnd.github+json"
+                    if custom_accept_param is None
+                    else custom_accept_param
+                ),
+                "Authorization": f"Bearer {self.__token}",
+                "User-Agent": "Lenormju/mergify-stargazer",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
         )
-        current_values.extend(next_response.json_data)  # assuming it's a list
+        if retry_after_value := response.headers.get("retry-after"):  # FIXME: untested !
+            raise RateLimitError(
+                f'received a "retry-after" by GitHub: {retry_after_value!r}',
+            )
+        if response.headers.get("X-RateLimit-Remaining") == "0":
+            reset_value = response.headers.get("X-RateLimit-Reset")
+            # reset_value is an UTC timestamp of when the rate will be replenished
+            raise RateLimitError(
+                f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
+            )
+        logger.debug(f"{response.headers=!r}")
+        if fetch_all_across_pagination and \
+                (link_value := response.headers.get("Link")) and \
+                (next_url := _extract_next_from_header_link_value(link_value)):
+            current_values = response.json()
+            next_response = self._github_api_get(  # recursive call /!\
+                url=next_url,
+                params=params,
+                custom_accept_param=custom_accept_param,
+                fetch_all_across_pagination=fetch_all_across_pagination,
+            )
+            current_values.extend(next_response.json_data)  # assuming it's a list
+            return _GitHubApiResponse(
+                status_code=next_response.status_code,
+                json_data=current_values,
+            )
         return _GitHubApiResponse(
-            status_code=next_response.status_code,
-            json_data=current_values,
+            status_code=response.status_code,
+            json_data=response.json(),
         )
-    return _GitHubApiResponse(
-        status_code=response.status_code,
-        json_data=response.json(),
-    )
 
 
 def _extract_next_from_header_link_value(link_value: str) -> str | None:
+    # TODO: could use a regex instead
     links = link_value.split(",")
     for link in links:
         link_url, link_rel = link.split(";")
