@@ -26,7 +26,6 @@ class StargazerCore:
 
     def compute_star_neighbours(
         self,
-        *,
         user_name: str,
         repo_name: str,
     ) -> Sequence[NeighbourRepository]:
@@ -39,10 +38,10 @@ class StargazerCore:
         all_star_neighbours = defaultdict(list)
 
         repo_stargazers = self.github_api.get_stargazers_of_repo(user_name, repo_name)
-        i = 1
+        # i = 1
         for stargazer_name in repo_stargazers:
-            print(i)
-            i += 1
+            # print(i, "/", len(repo_stargazers))
+            # i += 1
             repos_of_stargazer = self.github_api.get_stargazer_repos(stargazer_name)  # TODO: parallel
             for repo_fullname in repos_of_stargazer:
                 all_star_neighbours[repo_fullname].append(stargazer_name)
@@ -87,4 +86,5 @@ if __name__ == "__main__":
     print(core.github_api.get_rate_limit_core_remaining())  # noqa: T201
     # pp(core.compute_star_neighbours("astariul", "github-hosted-pypi"))  # noqa: T203
     pp(core.compute_star_neighbours("msqd", "harp"))  # noqa: T203
+    # pp(core.compute_star_neighbours("Lenormju", "talk-et-cfp"))  # noqa: T203
     print(core.github_api.get_rate_limit_core_remaining())  # noqa: T201

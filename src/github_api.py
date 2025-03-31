@@ -7,7 +7,8 @@ import logging
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, ParamSpec, TypeVar, TypeAlias
+from typing import Callable, ParamSpec, TypeVar, TypeAlias, Iterator
+import re
 
 import requests
 
@@ -87,42 +88,50 @@ class GithubApi:
     @_reraise_key_error_exception_as_unexpected_github_response
     def get_rate_limit_core_remaining(self) -> int:
         """Get the number of remaining requests that can me made on the API."""
-        response = self._github_api_get(
+        def raise_if_not_ok(status_code: int) -> None:
+            if status_code != requests.codes.ok:
+                raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
+
+        result = self._github_api_get(
             # https://docs.github.com/en/rest/rate-limit/rate-limit
             url="https://api.github.com/rate_limit",
+            final_status_code_handler=raise_if_not_ok,
         )
-        if response.status_code != requests.codes.ok:
-            raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
-        return response.json_data["resources"]["core"]["remaining"]
+        return next(result)["resources"]["core"]["remaining"]
 
     @_reraise_key_error_exception_as_unexpected_github_response
-    def get_stargazers_of_repo(self, owner_name: str, repo_name: str) -> Sequence[str]:
+    def get_stargazers_of_repo(self, owner_name: str, repo_name: str) -> Iterator[str]:
         """Get the users that have starred this repository."""
-        response = self._github_api_get(
+        def raise_if_not_processable_or_not_ok(status_code) -> None:
+            if status_code == requests.codes.unprocessable:
+                raise RateLimitError(f"received {status_code=!r}")
+            elif status_code != requests.codes.ok:
+                raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
+
+        result = self._github_api_get(
             # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-stargazers
             url=f"https://api.github.com/repos/{owner_name}/{repo_name}/stargazers",
+            final_status_code_handler=raise_if_not_processable_or_not_ok,
             params={
                 "per_page": MAXIMUM_GET_STARGAZERS_PER_PAGE,
             },
             custom_accept_param=None,  # no need for the starring timestamp
             fetch_all_across_pagination=True,
         )
-        if response.status_code == requests.codes.unprocessable:
-            raise RateLimitError(f"received {response.status_code=!r}")
-        if response.status_code == requests.codes.ok:
-            stargazers = tuple(stargazer["login"] for stargazer in response.json_data)
-            logger.debug(f"found {len(stargazers)=!r} for repo {owner_name}/{repo_name}")
-            logger.debug(f"{stargazers=!r}")
+        yield from (stargazer["login"] for stargazer in result)
 
-            return stargazers
-        raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
 
     @_reraise_key_error_exception_as_unexpected_github_response
-    def get_stargazer_repos(self, user_name: str) -> Sequence[str]:
+    def get_stargazer_repos(self, user_name: str) -> Iterator[str]:
         """Get the repositories that the user have starred."""
-        response = self._github_api_get(
+        def raise_if_not_ok(status_code: int) -> None:
+            if status_code != requests.codes.ok:
+                raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
+
+        result = self._github_api_get(
             # https://docs.github.com/en/rest/activity/starring?apiVersion=2022-11-28#list-repositories-starred-by-a-user
             url=f"https://api.github.com/users/{user_name}/starred",
+            final_status_code_handler=raise_if_not_ok,
             params={
                 "per_page": MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE,
                 # "sort" ignored
@@ -130,22 +139,17 @@ class GithubApi:
             custom_accept_param=None,  # no need for the starring timestamp
             fetch_all_across_pagination=True,
         )
-        if response.status_code == requests.codes.ok:
-            stargazer_repos = tuple(repo["full_name"] for repo in response.json_data)
-            logger.debug(f"found {len(stargazer_repos)=!r} for user {user_name}")
-            logger.debug(f"{stargazer_repos=!r}")
-
-            return stargazer_repos
-        raise UnexpectedGithubResponseError(f"unexpected {response.status_code=!r}")
+        yield from (repo["full_name"] for repo in result)
 
     def _github_api_get(
         self,
         *,
         url: str,
+        final_status_code_handler: Callable[[int], None] | None,
         params: dict[str, str | int] | None = None,
         custom_accept_param: str | None = None,
         fetch_all_across_pagination = False,  # TODO: find a better name for this param
-    ) -> _GitHubApiResponse:
+    ) -> Iterator[JSON]:
         """Make a GET request on the GitHub API using good defaults."""
         logger.debug(f"get github {url=!r} with {params=!r}")
         response = self.__session.get(
@@ -175,25 +179,26 @@ class GithubApi:
                 f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
             )
         logger.debug(f"{response.headers=!r}")
-        if fetch_all_across_pagination and \
-                (link_value := response.headers.get("Link")) and \
-                (next_url := _extract_next_from_header_link_value(link_value)):
-            current_values = response.json()
-            next_response = self._github_api_get(  # recursive call /!\
-                url=next_url,
-                params=params,
-                custom_accept_param=custom_accept_param,
-                fetch_all_across_pagination=fetch_all_across_pagination,
-            )
-            current_values.extend(next_response.json_data)  # assuming it's a list
-            return _GitHubApiResponse(
-                status_code=next_response.status_code,
-                json_data=current_values,
-            )
-        return _GitHubApiResponse(
-            status_code=response.status_code,
-            json_data=response.json(),
-        )
+        current_values = response.json()
+        if isinstance(current_values, list):
+            yield from current_values
+        elif isinstance(current_values, dict):
+            yield current_values
+        else:
+            raise TypeError(f"unsupported result type {type(current_values)}")
+        if fetch_all_across_pagination and (link_value := response.headers.get("Link")):
+            next_url = _extract_next_from_header_link_value(link_value)
+            last_url = _extract_last_from_header_link_value(link_value)
+            for other_page_url in _generate_all_next_pages_to_fetch(next_url=next_url, last_url=last_url):
+                yield from self._github_api_get(
+                    url=other_page_url,
+                    final_status_code_handler=None,
+                    params=params,
+                    custom_accept_param=custom_accept_param,
+                    fetch_all_across_pagination=False,
+                )
+        if final_status_code_handler is not None:
+            final_status_code_handler(response.status_code)
 
 
 def _extract_next_from_header_link_value(link_value: str) -> str | None:
@@ -203,3 +208,29 @@ def _extract_next_from_header_link_value(link_value: str) -> str | None:
         link_url, link_rel = link.split(";")
         if link_rel.strip() == 'rel="next"':
             return link_url.strip("<> ")  # remove extra spaces and angle brackets
+
+
+def _extract_last_from_header_link_value(link_value: str) -> str | None:
+    # TODO: refactor this duplicate of `_extract_next_from_header_link_value`
+    links = link_value.split(",")
+    for link in links:
+        link_url, link_rel = link.split(";")
+        if link_rel.strip() == 'rel="last"':
+            return link_url.strip("<> ")  # remove extra spaces and angle brackets
+
+
+def _generate_all_next_pages_to_fetch(*, next_url: str | None, last_url: str | None) -> Sequence[str]:
+    link_pattern = re.compile(
+        r"""
+        (?P<before>.*&page=)
+        (?P<page_number>\d+)
+        (?P<after>.*?)
+        """, re.X)
+    if (next_url is None) or (last_url is None):
+        return ()
+    next_page_number = int(link_pattern.fullmatch(next_url).group("page_number"))
+    last_page_number = int(link_pattern.fullmatch(last_url).group("page_number"))
+    return tuple(
+        link_pattern.sub(f"\\g<before>{page_number!s}\\g<after>", next_url)
+        for page_number in range(next_page_number, last_page_number + 1)
+    )
