@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import logging
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, ParamSpec, TypeVar, TypeAlias, Iterator
+from typing import Callable, ParamSpec, TypeVar, TypeAlias, Iterator, AsyncGenerator, Iterable
 import re
 
-import requests
+import httpx
 
 # see https://docs.github.com/en/rest/using-the-rest-api/getting-started-with-the-rest-api?apiVersion=2022-11-28
 # rate limit, cf https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=2022-11-28
@@ -71,6 +71,9 @@ MAXIMUM_GET_STARGAZERS_PER_PAGE = 100
 MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE = 100
 
 
+MAXIMUM_PARALLEL_FETCHES = 20  # to prevent saturating GitHub rate API or our connection
+
+
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None  # https://stackoverflow.com/a/77361801/11384184
 
 
@@ -83,13 +86,13 @@ class _GitHubApiResponse:
 class GithubApi:
     def __init__(self, token: str) -> None:
         self.__token = token
-        self.__session = requests.Session()  # to be reused between calls
+        self.__client = httpx.AsyncClient()  # to be reused between calls
 
     @_reraise_key_error_exception_as_unexpected_github_response
-    def get_rate_limit_core_remaining(self) -> int:
+    async def get_rate_limit_core_remaining(self) -> int:
         """Get the number of remaining requests that can me made on the API."""
         def raise_if_not_ok(status_code: int) -> None:
-            if status_code != requests.codes.ok:
+            if status_code != httpx.codes.OK:
                 raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
 
         result = self._github_api_get(
@@ -97,15 +100,15 @@ class GithubApi:
             url="https://api.github.com/rate_limit",
             final_status_code_handler=raise_if_not_ok,
         )
-        return next(result)["resources"]["core"]["remaining"]
+        return (await result)["resources"]["core"]["remaining"]
 
     @_reraise_key_error_exception_as_unexpected_github_response
-    def get_stargazers_of_repo(self, owner_name: str, repo_name: str) -> Iterator[str]:
+    async def get_stargazers_of_repo(self, owner_name: str, repo_name: str) -> Sequence[str]:
         """Get the users that have starred this repository."""
         def raise_if_not_processable_or_not_ok(status_code) -> None:
-            if status_code == requests.codes.unprocessable:
+            if status_code == httpx.codes.UNPROCESSABLE_ENTITY:
                 raise RateLimitError(f"received {status_code=!r}")
-            elif status_code != requests.codes.ok:
+            elif status_code != httpx.codes.OK:
                 raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
 
         result = self._github_api_get(
@@ -118,14 +121,14 @@ class GithubApi:
             custom_accept_param=None,  # no need for the starring timestamp
             fetch_all_across_pagination=True,
         )
-        yield from (stargazer["login"] for stargazer in result)
+        return tuple(stargazer["login"] for stargazer in await result)
 
 
     @_reraise_key_error_exception_as_unexpected_github_response
-    def get_stargazer_repos(self, user_name: str) -> Iterator[str]:
+    async def get_stargazer_repos(self, user_name: str) -> Sequence[str]:
         """Get the repositories that the user have starred."""
         def raise_if_not_ok(status_code: int) -> None:
-            if status_code != requests.codes.ok:
+            if status_code != httpx.codes.OK:
                 raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
 
         result = self._github_api_get(
@@ -139,9 +142,9 @@ class GithubApi:
             custom_accept_param=None,  # no need for the starring timestamp
             fetch_all_across_pagination=True,
         )
-        yield from (repo["full_name"] for repo in result)
+        return tuple(repo["full_name"] for repo in await result)
 
-    def _github_api_get(
+    async def _github_api_get(
         self,
         *,
         url: str,
@@ -149,13 +152,13 @@ class GithubApi:
         params: dict[str, str | int] | None = None,
         custom_accept_param: str | None = None,
         fetch_all_across_pagination = False,  # TODO: find a better name for this param
-    ) -> Iterator[JSON]:
+    ) -> JSON:
         """Make a GET request on the GitHub API using good defaults."""
         logger.debug(f"get github {url=!r} with {params=!r}")
-        response = self.__session.get(
+        response = await self.__client.get(
             url=url,
             params=params,
-            allow_redirects=True,
+            follow_redirects=True,
             timeout=DEFAULT_TIMEOUT_SECONDS,
             headers={
                 "Accept": (
@@ -179,26 +182,26 @@ class GithubApi:
                 f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
             )
         logger.debug(f"{response.headers=!r}")
-        current_values = response.json()
-        if isinstance(current_values, list):
-            yield from current_values
-        elif isinstance(current_values, dict):
-            yield current_values
-        else:
-            raise TypeError(f"unsupported result type {type(current_values)}")
+        all_values = response.json()
         if fetch_all_across_pagination and (link_value := response.headers.get("Link")):
             next_url = _extract_next_from_header_link_value(link_value)
             last_url = _extract_last_from_header_link_value(link_value)
-            for other_page_url in _generate_all_next_pages_to_fetch(next_url=next_url, last_url=last_url):
-                yield from self._github_api_get(
-                    url=other_page_url,
-                    final_status_code_handler=None,
-                    params=params,
-                    custom_accept_param=custom_accept_param,
-                    fetch_all_across_pagination=False,
+            for value in await asyncio.gather(
+                *(
+                    self._github_api_get(
+                        url=other_page_url,
+                        final_status_code_handler=None,
+                        params=params,
+                        custom_accept_param=custom_accept_param,
+                        fetch_all_across_pagination=False,
+                    )
+                    for other_page_url in _generate_all_next_pages_to_fetch(next_url=next_url, last_url=last_url)
                 )
+            ):
+                all_values.extend(value)  # assuming it's a list
         if final_status_code_handler is not None:
             final_status_code_handler(response.status_code)
+        return all_values
 
 
 def _extract_next_from_header_link_value(link_value: str) -> str | None:

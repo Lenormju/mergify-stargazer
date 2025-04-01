@@ -35,14 +35,14 @@ AUTHORIZED_PASSWORD = "xVE8WyVsOfpn5cEQfgqB"  # randomly generated
 
 
 @app.get("/repos/{user}/{repo}/starneighbours")
-def get_star_neighbours(
+async def get_star_neighbours(
     user: str,
     repo: str,
     credentials: Annotated[HTTPBasicCredentials, Depends(security)],
 ) -> Sequence[NeighbourRepository]:
     """If authenticated, compute the repos that are neighbours of the one provided."""
     _raise_if_not_properly_authenticated(credentials)
-    return STARGAZER_CORE.compute_star_neighbours(user_name=user, repo_name=repo)
+    return await STARGAZER_CORE.compute_star_neighbours(user_name=user, repo_name=repo)
 
 
 def _raise_if_not_properly_authenticated(
