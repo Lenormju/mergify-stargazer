@@ -5,10 +5,15 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, ParamSpec, TypeVar, TypeAlias, Iterator, AsyncGenerator, Iterable
-import re
+from typing import (
+    Callable,
+    ParamSpec,
+    TypeAlias,
+    TypeVar,
+)
 
 import httpx
 
@@ -74,7 +79,9 @@ MAXIMUM_GET_STARGAZERS_REPOS_PER_PAGE = 100
 MAXIMUM_PARALLEL_FETCHES = 20  # to prevent saturating GitHub rate API or our connection
 
 
-JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None  # https://stackoverflow.com/a/77361801/11384184
+JSON: TypeAlias = (
+    dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
+)  # https://stackoverflow.com/a/77361801/11384184
 
 
 @dataclass
@@ -84,7 +91,14 @@ class _GitHubApiResponse:
 
 
 class GithubApi:
+    """
+    Interface to request the GitHub API.
+
+    It obeys rate-limiting and follows good practices.
+    """
+
     def __init__(self, token: str) -> None:
+        """Create a new GitHub API, sharing an HTTP client and limitations."""
         self.__token = token
         self.__client = httpx.AsyncClient()  # to be reused between calls
         self.__semaphore = asyncio.BoundedSemaphore(MAXIMUM_PARALLEL_FETCHES)
@@ -92,6 +106,7 @@ class GithubApi:
     @_reraise_key_error_exception_as_unexpected_github_response
     async def get_rate_limit_core_remaining(self) -> int:
         """Get the number of remaining requests that can me made on the API."""
+
         def raise_if_not_ok(status_code: int) -> None:
             if status_code != httpx.codes.OK:
                 raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
@@ -102,14 +117,20 @@ class GithubApi:
             final_status_code_handler=raise_if_not_ok,
         )
         return (await result)["resources"]["core"]["remaining"]
+        # TODO: returning
+        #  `datetime.datetime.fromtimestamp(result["resources"]["core"]["remaining"])`
+        #  also could be useful
 
     @_reraise_key_error_exception_as_unexpected_github_response
-    async def get_stargazers_of_repo(self, owner_name: str, repo_name: str) -> Sequence[str]:
+    async def get_stargazers_of_repo(
+        self, owner_name: str, repo_name: str
+    ) -> Sequence[str]:
         """Get the users that have starred this repository."""
-        def raise_if_not_processable_or_not_ok(status_code) -> None:
+
+        def raise_if_not_processable_or_not_ok(status_code: int) -> None:
             if status_code == httpx.codes.UNPROCESSABLE_ENTITY:
                 raise RateLimitError(f"received {status_code=!r}")
-            elif status_code != httpx.codes.OK:
+            if status_code != httpx.codes.OK:
                 raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
 
         result = self._github_api_get(
@@ -124,10 +145,10 @@ class GithubApi:
         )
         return tuple(stargazer["login"] for stargazer in await result)
 
-
     @_reraise_key_error_exception_as_unexpected_github_response
     async def get_stargazer_repos(self, user_name: str) -> Sequence[str]:
         """Get the repositories that the user have starred."""
+
         def raise_if_not_ok(status_code: int) -> None:
             if status_code != httpx.codes.OK:
                 raise UnexpectedGithubResponseError(f"unexpected {status_code=!r}")
@@ -152,7 +173,7 @@ class GithubApi:
         final_status_code_handler: Callable[[int], None] | None,
         params: dict[str, str | int] | None = None,
         custom_accept_param: str | None = None,
-        fetch_all_across_pagination = False,  # TODO: find a better name for this param
+        fetch_all_across_pagination: bool = False,  # TODO: find better name
     ) -> JSON:
         """Make a GET request on the GitHub API using good defaults."""
         logger.debug(f"get github {url=!r} with {params=!r}")
@@ -173,7 +194,9 @@ class GithubApi:
                     "X-GitHub-Api-Version": "2022-11-28",
                 },
             )
-        if retry_after_value := response.headers.get("retry-after"):  # FIXME: untested !
+        if retry_after_value := response.headers.get(
+            "retry-after"
+        ):  # FIXME: untested !
             raise RateLimitError(
                 f'received a "retry-after" by GitHub: {retry_after_value!r}',
             )
@@ -183,7 +206,8 @@ class GithubApi:
             raise RateLimitError(
                 f'received "X-RateLimit-Remaining"==0 by GitHub: {reset_value=!r}',
             )
-        logger.debug(f"{response.headers=!r}")
+            # TODO: don't raise if we are indeed asking the remaining rate (ironic !)
+        # logger.debug(f"{response.headers=!r}")
         all_values = response.json()
         if fetch_all_across_pagination and (link_value := response.headers.get("Link")):
             next_url = _extract_next_from_header_link_value(link_value)
@@ -193,11 +217,13 @@ class GithubApi:
                     self._github_api_get(
                         url=other_page_url,
                         final_status_code_handler=None,
-                        params=None,  # already included in link url, otherwise would override them
+                        params=None,  # already included in link url, avoir overriding
                         custom_accept_param=custom_accept_param,
                         fetch_all_across_pagination=False,
                     )
-                    for other_page_url in _generate_all_next_pages_to_fetch(next_url=next_url, last_url=last_url)
+                    for other_page_url in _generate_all_next_pages_to_fetch(
+                        next_url=next_url, last_url=last_url
+                    )
                 )
             ):
                 all_values.extend(value)  # assuming it's a list
@@ -213,6 +239,7 @@ def _extract_next_from_header_link_value(link_value: str) -> str | None:
         link_url, link_rel = link.split(";")
         if link_rel.strip() == 'rel="next"':
             return link_url.strip("<> ")  # remove extra spaces and angle brackets
+    return None
 
 
 def _extract_last_from_header_link_value(link_value: str) -> str | None:
@@ -222,15 +249,20 @@ def _extract_last_from_header_link_value(link_value: str) -> str | None:
         link_url, link_rel = link.split(";")
         if link_rel.strip() == 'rel="last"':
             return link_url.strip("<> ")  # remove extra spaces and angle brackets
+    return None
 
 
-def _generate_all_next_pages_to_fetch(*, next_url: str | None, last_url: str | None) -> Sequence[str]:
+def _generate_all_next_pages_to_fetch(
+    *, next_url: str | None, last_url: str | None
+) -> Sequence[str]:
     link_pattern = re.compile(
         r"""
         (?P<before>.*&page=)
         (?P<page_number>\d+)
         (?P<after>.*?)
-        """, re.X)
+        """,
+        re.VERBOSE,
+    )
     if (next_url is None) or (last_url is None):
         return ()
     next_page_number = int(link_pattern.fullmatch(next_url).group("page_number"))

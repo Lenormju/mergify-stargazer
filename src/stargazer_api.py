@@ -1,5 +1,7 @@
 """The web API provided for Stargazer. It is based on vanilla FastAPI."""
 
+from __future__ import annotations
+
 import logging
 import secrets
 from collections.abc import AsyncIterator, Sequence
@@ -31,7 +33,7 @@ STARGAZER_CORE: StargazerCore | None = None
 
 
 AUTHORIZED_LOGIN = "julien"
-AUTHORIZED_PASSWORD = "xVE8WyVsOfpn5cEQfgqB"  # randomly generated
+AUTHORIZED_PASSWORD = "xVE8WyVsOfpn5cEQfgqB"  # noqa: S105
 
 
 @app.get("/repos/{user}/{repo}/starneighbours")
@@ -84,5 +86,5 @@ def _setup_custom_logging() -> None:
 
 
 def _init_core() -> None:
-    global STARGAZER_CORE
+    global STARGAZER_CORE  # noqa: PLW0603
     STARGAZER_CORE = StargazerCore()  # will fail if the env var is not defined

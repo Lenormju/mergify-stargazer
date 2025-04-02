@@ -28,6 +28,8 @@ ignore = [
     "TD001",  # use TODO instead of FIXME ==> FIXMEs are valid TODO tags in my opinion
     "G004",  # avoid f-string in logging messages ==> for perf reasons, to fix later
     "TC003",  # typechking import into a donctionnal block ==> there is no need for this elvel of optimization
+    "FIX001",  # FIXMEs are OK
+    "FIX002",  # TODOs are OK
 ]
 
 [tool.pytest.ini_options]
