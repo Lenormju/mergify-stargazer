@@ -87,6 +87,7 @@ class GithubApi:
     def __init__(self, token: str) -> None:
         self.__token = token
         self.__client = httpx.AsyncClient()  # to be reused between calls
+        self.__semaphore = asyncio.BoundedSemaphore(MAXIMUM_PARALLEL_FETCHES)
 
     @_reraise_key_error_exception_as_unexpected_github_response
     async def get_rate_limit_core_remaining(self) -> int:
@@ -155,22 +156,23 @@ class GithubApi:
     ) -> JSON:
         """Make a GET request on the GitHub API using good defaults."""
         logger.debug(f"get github {url=!r} with {params=!r}")
-        response = await self.__client.get(
-            url=url,
-            params=params,
-            follow_redirects=True,
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-            headers={
-                "Accept": (
-                    "application/vnd.github+json"
-                    if custom_accept_param is None
-                    else custom_accept_param
-                ),
-                "Authorization": f"Bearer {self.__token}",
-                "User-Agent": "Lenormju/mergify-stargazer",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        )
+        async with self.__semaphore:
+            response = await self.__client.get(
+                url=url,
+                params=params,
+                follow_redirects=True,
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                headers={
+                    "Accept": (
+                        "application/vnd.github+json"
+                        if custom_accept_param is None
+                        else custom_accept_param
+                    ),
+                    "Authorization": f"Bearer {self.__token}",
+                    "User-Agent": "Lenormju/mergify-stargazer",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
         if retry_after_value := response.headers.get("retry-after"):  # FIXME: untested !
             raise RateLimitError(
                 f'received a "retry-after" by GitHub: {retry_after_value!r}',
