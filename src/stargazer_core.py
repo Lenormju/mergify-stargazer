@@ -60,7 +60,7 @@ class StargazerCore:
                 (
                     NeighbourRepository(
                         repo=repo_fullname,
-                        stargazers=repo_stargazers,
+                        stargazers=sorted(repo_stargazers),
                     )
                     for repo_fullname, repo_stargazers in all_star_neighbours.items()
                 ),
