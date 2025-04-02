@@ -58,3 +58,7 @@ To test the code : `uv run pytest`
 * use pydantic BaseModel for validation
 * use PyGitHub lib
 * better authentication system
+* better error handling at the API level (avoid 5xx on the web API for example)
+* give progression feedback
+* remove sort and do it on the test-side
+* have a less spiky fetch (first page of stargazers, then all other pages, THEN first page of each stargazer then each next pages)

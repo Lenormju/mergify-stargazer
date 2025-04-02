@@ -207,7 +207,7 @@ class GithubApi:
 
 
 def _extract_next_from_header_link_value(link_value: str) -> str | None:
-    # TODO: could use a regex instead
+    # TODO: could use a regex instead ?
     links = link_value.split(",")
     for link in links:
         link_url, link_rel = link.split(";")
