@@ -191,7 +191,7 @@ class GithubApi:
                     self._github_api_get(
                         url=other_page_url,
                         final_status_code_handler=None,
-                        params=params,
+                        params=None,  # already included in link url, otherwise would override them
                         custom_accept_param=custom_accept_param,
                         fetch_all_across_pagination=False,
                     )
